@@ -1,15 +1,16 @@
 import streamlit as st
+import urllib.request
+import io
 from pypdf import PdfReader
 import pandas as pd
 
-# 設定手機網頁頁面標題與佈局
-st.set_page_config(page_title="診所藥品庫存比對系統", page_icon="💊", layout="centered")
+st.set_page_config(page_title="診所藥品庫存比對", page_icon="💊", layout="centered")
 
 # 1. 診所常用藥品清單
 COMMON_DRUGS = [
     # 單味藥
     "黃水茄", "藕節", "半枝蓮", "綿茵陳", "仙鶴草", "香附", "板藍根", "白鮮皮", "桑寄生", "麥芽", 
-    "合歡皮", "大黃", "蒲公英", "茯神", "益母草", "夏枯草", "夜交藤", "連翹", "葶藶子", "丹參", 
+    "合歡皮", "大黃", "蒲公英", "茯神", "益母草", "夏枯草", "夜交藤", "連翹", "葶苶子", "丹參", 
     "菟絲子", "紫蘇葉", "玉竹", "山藥", "葛根", "黃精", "杜仲", "魚腥草", "皂角刺", "續斷", 
     "蒼耳子", "鉤藤", "女貞子", "天花粉", "川芎", "旱蓮草", "枳實", "地膚子", "蒼朮", "海螵蛸", 
     "土茯苓", "黃芩", "梔子", "決明子", "雞血藤", "牡蠣", "牡丹皮", "紫草根", "巴戟天", "淫羊藿", 
@@ -30,68 +31,73 @@ COMMON_DRUGS = [
     "清上防風湯", "竹葉石膏湯"
 ]
 
-# 手機介面 UI 標題
-st.title("💊 診所常用藥品庫存比對")
-st.caption("請上傳每日廠商 PDF 藥單，系統自動比對診所常用藥品與庫存")
+st.title("💊 診所藥品庫存自動比對")
 
-# 2. 上傳 PDF 檔案區塊
-uploaded_file = st.file_uploader("📤 點擊或拖曳上傳 PDF 藥單", type=["pdf"])
+# 分頁籤：支援「貼上網址」與「檔案上傳」兩種模式
+tab1, tab2 = st.tabs(["🔗 貼上 PDF 網址", "📤 上傳 PDF 檔案"])
 
-if uploaded_file is not None:
-    # 讀取 PDF 內容
-    reader = PdfReader(uploaded_file)
-    pdf_text_lines = []
-    
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            # 將 PDF 按行切分
-            pdf_text_lines.extend(text.split('\n'))
+pdf_stream = None
 
-    matched_data = []
+# ---- 模式 1：貼上網址 ----
+with tab1:
+    url_input = st.text_input("請貼上複製的 PDF 網址：", placeholder="https://... 或 http://...")
+    if url_input:
+        try:
+            req = urllib.request.Request(url_input, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req) as response:
+                pdf_bytes = response.read()
+                pdf_stream = io.BytesIO(pdf_bytes)
+                st.success("成功讀取網路 PDF 檔案！")
+        except Exception as e:
+            st.error("無法讀取該網址的 PDF，請確認網址是否為公開可下載的連結，或改用上傳檔案。")
 
-    # 3. 比對邏輯（比對診所常用藥）
-    for drug in COMMON_DRUGS:
-        for line in pdf_text_lines:
-            # 如果廠商藥單該行包含診所常用藥名稱
-            if drug in line:
-                parts = line.split()
-                # 抓取行尾的庫存數字，若有非數字字元則進行基本清理
-                qty = parts[-1] if parts else "0"
-                matched_data.append({
-                    "診所常用藥": drug,
-                    "廠商標示品名": parts[1] if len(parts) > 1 else drug,
-                    "庫存數量": qty
-                })
-                break  # 避免同一藥品重複比對多行
+# ---- 模式 2：檔案上傳 ----
+with tab2:
+    uploaded_file = st.file_uploader("選擇手機內的 PDF 檔案", type=["pdf"])
+    if uploaded_file is not None:
+        pdf_stream = uploaded_file
 
-    # 4. 顯示結果
-    st.divider()
-    st.subheader(f"✅ 符合項目（共 {len(matched_data)} 項）")
+# ---- 比對與顯示邏輯 ----
+if pdf_stream is not None:
+    try:
+        reader = PdfReader(pdf_stream)
+        pdf_text_lines = []
+        
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                pdf_text_lines.extend(text.split('\n'))
 
-    if matched_data:
-        # 手機卡片式條列顯示
-        for idx, item in enumerate(matched_data, 1):
-            st.markdown(
-                f"""
-                <div style="background-color:#F0F2F6; padding:12px; border-radius:10px; margin-bottom:8px;">
-                    <span style="font-size:16px; font-weight:bold; color:#1E88E5;">{idx}. {item['診所常用藥']}</span><br/>
-                    <span style="font-size:14px; color:#555;">廠商品名：{item['廠商標示品名']}</span><br/>
-                    <span style="font-size:15px; font-weight:bold; color:#D32F2F;">📦 廠商庫存：{item['庫存數量']}</span>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            
-        # 提供 CSV 匯出功能
-        df = pd.DataFrame(matched_data)
-        csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 下載比對結果 Excel/CSV",
-            data=csv,
-            file_name="診所庫存比對結果.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    else:
-        st.warning("⚠️ 未找到任何符合「診所常用藥」且「廠商有庫存」的項目。")
+        matched_data = []
+
+        for drug in COMMON_DRUGS:
+            for line in pdf_text_lines:
+                if drug in line:
+                    parts = line.split()
+                    qty = parts[-1] if parts else "0"
+                    matched_data.append({
+                        "診所常用藥": drug,
+                        "廠商標示品名": parts[1] if len(parts) > 1 else drug,
+                        "庫存數量": qty
+                    })
+                    break
+
+        st.divider()
+        st.subheader(f"✅ 符合項目（共 {len(matched_data)} 項）")
+
+        if matched_data:
+            for idx, item in enumerate(matched_data, 1):
+                st.markdown(
+                    f"""
+                    <div style="background-color:#F0F2F6; padding:12px; border-radius:10px; margin-bottom:8px;">
+                        <span style="font-size:16px; font-weight:bold; color:#1E88E5;">{idx}. {item['診所常用藥']}</span><br/>
+                        <span style="font-size:14px; color:#555;">廠商品名：{item['廠商標示品名']}</span><br/>
+                        <span style="font-size:15px; font-weight:bold; color:#D32F2F;">📦 廠商庫存：{item['庫存數量']}</span>
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
+        else:
+            st.warning("⚠️ 未找到任何符合「診所常用藥」且「廠商有庫存」的項目。")
+    except Exception as e:
+        st.error("解析 PDF 失敗，請確認檔案格式是否正確。")
