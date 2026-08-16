@@ -1,0 +1,97 @@
+import streamlit as st
+from pypdf import PdfReader
+import pandas as pd
+
+# 設定手機網頁頁面標題與佈局
+st.set_page_config(page_title="診所藥品庫存比對系統", page_icon="💊", layout="centered")
+
+# 1. 診所常用藥品清單
+COMMON_DRUGS = [
+    # 單味藥
+    "黃水茄", "藕節", "半枝蓮", "綿茵陳", "仙鶴草", "香附", "板藍根", "白鮮皮", "桑寄生", "麥芽", 
+    "合歡皮", "大黃", "蒲公英", "茯神", "益母草", "夏枯草", "夜交藤", "連翹", "葶藶子", "丹參", 
+    "菟絲子", "紫蘇葉", "玉竹", "山藥", "葛根", "黃精", "杜仲", "魚腥草", "皂角刺", "續斷", 
+    "蒼耳子", "鉤藤", "女貞子", "天花粉", "川芎", "旱蓮草", "枳實", "地膚子", "蒼朮", "海螵蛸", 
+    "土茯苓", "黃芩", "梔子", "決明子", "雞血藤", "牡蠣", "牡丹皮", "紫草根", "巴戟天", "淫羊藿", 
+    "石膏", "艾葉", "薄荷", "路路通", "小茴香", "雞內金", "覆盆子", "銀豆", "澤瀉", "三七", 
+    "梗米", "白芨",
+    # 複方藥
+    "消風散", "當歸芍藥散", "加味逍遙散", "清燥救肺湯", "八味帶下方", "當歸拈痛湯", "柴胡加龍骨牡蠣湯", 
+    "桂枝加龍骨牡蠣湯", "半夏厚朴湯", "炙甘草湯", "辛夷清肺湯", "三黃瀉心湯", "百合固金湯", "天王補心丹", 
+    "濟生腎氣丸", "當歸四逆湯", "補中益氣湯", "天麻鉤藤飲", "清暑益氣湯", "五苓散", "加胃平胃散", 
+    "止嗽散", "代赭旋覆湯", "六君子湯", "平胃散", "麥門冬湯", "小青龍湯", "蒼耳散", "豬苓湯", 
+    "普濟消毒飲", "龍膽瀉肝湯", "通竅活血湯", "人蔘養榮湯", "血府逐瘀湯", "木香檳榔丸", "桂枝茯苓丸", 
+    "川芎茶調散", "知柏地黃丸", "連翹敗毒散", "麻子仁丸", "甘麥大棗湯", "柴胡疏肝湯", "溫膽湯", 
+    "溫清湯", "柴胡清肝湯", "少腹逐瘀湯", "身痛逐瘀湯", "完帶湯", "防風通聖散", "杞菊地黃丸", 
+    "芍藥甘草湯", "歸脾湯", "大承氣湯", "藿香正氣散", "疏經活血湯", "甘露飲", "玉女煎", 
+    "半夏瀉心湯", "桑螵蛸散", "生脈飲", "七寶美髯丹", "黃耆五物湯", "荊芥連翹湯", "金鎖固精丸", 
+    "八正散", "柴葛解肌湯", "葛根黃芩黃連湯", "四逆湯", "補陽還五湯", "桃核承氣湯", "大青龍湯", 
+    "越婢加朮湯", "當歸飲子", "保和丸", "胃舒寧", "紫草根牡蠣湯", "地黃飲子", "溫經湯", 
+    "清上防風湯", "竹葉石膏湯"
+]
+
+# 手機介面 UI 標題
+st.title("💊 診所常用藥品庫存比對")
+st.caption("請上傳每日廠商 PDF 藥單，系統自動比對診所常用藥品與庫存")
+
+# 2. 上傳 PDF 檔案區塊
+uploaded_file = st.file_uploader("📤 點擊或拖曳上傳 PDF 藥單", type=["pdf"])
+
+if uploaded_file is not None:
+    # 讀取 PDF 內容
+    reader = PdfReader(uploaded_file)
+    pdf_text_lines = []
+    
+    for page in reader.pages:
+        text = page.extract_text()
+        if text:
+            # 將 PDF 按行切分
+            pdf_text_lines.extend(text.split('\n'))
+
+    matched_data = []
+
+    # 3. 比對邏輯（比對診所常用藥）
+    for drug in COMMON_DRUGS:
+        for line in pdf_text_lines:
+            # 如果廠商藥單該行包含診所常用藥名稱
+            if drug in line:
+                parts = line.split()
+                # 抓取行尾的庫存數字，若有非數字字元則進行基本清理
+                qty = parts[-1] if parts else "0"
+                matched_data.append({
+                    "診所常用藥": drug,
+                    "廠商標示品名": parts[1] if len(parts) > 1 else drug,
+                    "庫存數量": qty
+                })
+                break  # 避免同一藥品重複比對多行
+
+    # 4. 顯示結果
+    st.divider()
+    st.subheader(f"✅ 符合項目（共 {len(matched_data)} 項）")
+
+    if matched_data:
+        # 手機卡片式條列顯示
+        for idx, item in enumerate(matched_data, 1):
+            st.markdown(
+                f"""
+                <div style="background-color:#F0F2F6; padding:12px; border-radius:10px; margin-bottom:8px;">
+                    <span style="font-size:16px; font-weight:bold; color:#1E88E5;">{idx}. {item['診所常用藥']}</span><br/>
+                    <span style="font-size:14px; color:#555;">廠商品名：{item['廠商標示品名']}</span><br/>
+                    <span style="font-size:15px; font-weight:bold; color:#D32F2F;">📦 廠商庫存：{item['庫存數量']}</span>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            
+        # 提供 CSV 匯出功能
+        df = pd.DataFrame(matched_data)
+        csv = df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 下載比對結果 Excel/CSV",
+            data=csv,
+            file_name="診所庫存比對結果.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    else:
+        st.warning("⚠️ 未找到任何符合「診所常用藥」且「廠商有庫存」的項目。")
